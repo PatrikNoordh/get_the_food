@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>What the f🍔🌮k am i going to eat?</title>
     <link rel="stylesheet" href="style.css" />
+    <script src="config.js" defer></script> 
     <script src="food.js" defer></script>
   </head>
   <body>
@@ -26,6 +27,12 @@
           autocomplete="off"
         />
         <button type="submit">Search</button>
+
+        <div class="ai-toggle">
+          <input type="checkbox" id="ai-fallback"/>
+          <label for="ai-fallback">Ask AI if no recepie is found</label>
+          <span class="ai-toggle-note" id="ia-note"></span>
+        </div>
       </form>
 
       <p class="status" id="status" aria-live="polite"></p>
