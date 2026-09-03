@@ -2,10 +2,25 @@ const API_URL = "https://www.themealdb.com/api/json/v1/1/search.php?s=";
 
 const MAX_INGREDIENTS = 20;
 
+const GEMINI_MODEL = "gemini-3.5-flash";
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
 const form = document.querySelector("#search-form");
 const searchField = document.querySelector("#search-field");
 const statusEl = document.querySelector("#status");
 const results = document.querySelector("#results");
+const aiToggle = document.querySelector("#ai-fallback");
+const aiNote = document.querySelector("#ai-note");
+
+const hasApiKey =
+  typeof GEMINI_API_KEY !== "undefined" && GEMINI_API_KEY !== "";
+
+if (!hasApiKey && aiToggle && aiNote) {
+  aiToggle.checked = false;
+  aiToggle.disabled = true;
+  aiNote.textContent =
+    "No API key found. Please add your API key in config.js.";
+}
 
 function getIngredients(meal) {
   const list = [];
@@ -62,6 +77,100 @@ function createRecipeCard(meal) {
   return card;
 }
 
+async function askGemini(query) {
+  statusEl.textContent = "Asking AI for a recipe...";
+
+  const prompt = `You are a helpful assistant that provides a recipe based on the following query: "${query}".
+   Please provide a recipe with a title, list of ingredients, and step-by-step instructions.`;
+
+  const response = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            title: { type: "STRING" },
+            area: { type: "STRING" },
+            ingredients: { type: "ARRAY", items: { type: "STRING" } },
+            instructions: { type: "STRING" },
+          },
+          required: ["title", "area", "ingredients", "instructions"],
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const messages = {
+      400: "Bad request — check the request body.",
+      403: "Invalid API key — check config.js.",
+      429: "Too many requests — wait a moment and try again.",
+      503: "The AI is overloaded right now. Try again in a few seconds.",
+    };
+
+    throw new Error(
+      messages[response.status] ?? `Gemini responded ${response.status}`,
+    );
+  }
+  const data = await response.json();
+
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!text) {
+    throw new Error("Gemini returned an empty response.");
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("Gemini returned an invalid JSON response.");
+  }
+}
+
+function createAiRecipeCard(recipe) {
+  const card = document.createElement("article");
+  card.className = "Recipe-card ai-card";
+
+  const badge = document.createElement("span");
+  badge.className = "ai-badge";
+  badge.textContent = "AI-generated";
+  card.append(badge);
+
+  const title = document.createElement("h2");
+  title.className = "recipe-title";
+  title.textContent = recipe.title;
+  card.append(title);
+
+  const origin = document.createElement("p");
+  origin.className = "recipe-origin";
+  origin.textContent = recipe.area || "Unknown origin";
+  card.append(origin);
+
+  const ingredients = document.createElement("ul");
+  ingredients.className = "recipe-ingredients";
+
+  for (const row of recipe.ingredients ?? []) {
+    const item = document.createElement("li");
+    item.textContent = row;
+    ingredients.append(item);
+  }
+
+  card.append(ingredients);
+
+  const instructions = document.createElement("p");
+  instructions.className = "recipe-instructions";
+  instructions.textContent = recipe.instructions;
+  card.append(instructions);
+
+  return card;
+}
+
 async function searchMeals(query) {
   results.replaceChildren();
   statusEl.textContent = "Searching...";
@@ -76,7 +185,13 @@ async function searchMeals(query) {
     const data = await response.json();
 
     if (data.meals === null) {
-      statusEl.textContent = `No results found for "${query}".`;
+      if (aiToggle?.checked) {
+        const recipe = await askGemini(query);
+        results.append(createAiRecipeCard(recipe));
+        statusEl.textContent = `No match in TheMealDB — here is an AI suggestion for "${query}".`;
+      } else {
+        statusEl.textContent = `No results found for "${query}".`;
+      }
       return;
     }
 
@@ -90,8 +205,7 @@ async function searchMeals(query) {
 
     results.append(fragment);
   } catch (error) {
-    statusEl.textContent =
-      `An error occurred while searching for meals : ${error.message}.`;
+    statusEl.textContent = `An error occurred while searching for meals : ${error.message}.`;
     console.error("Error fetching meals:", error);
   }
 }
