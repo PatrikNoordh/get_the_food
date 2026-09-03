@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>What the f🍔🌮k am i going to eat?</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="food.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <h1>What the f🍔🌮k am i going to eat ?</h1>
+      <p class="intro">Search among recepies from the whole wide world</p>
+    </header>
+
+    <main>
+      <form class="search-form" id="search-form">
+        <label class="visually-hidden" for="search-field"
+          >Search recepies</label
+        >
+        <input
+          type="search"
+          id="search-field"
+          name="search"
+          placeholder="t.ex. chicken, pasta, soup"
+          autocomplete="off"
+        />
+        <button type="submit">Search</button>
+      </form>
+
+      <p class="status" id="status" aria-live="polite"></p>
+
+      <div class="results" id="results"></div>
+    </main>
+
+    <footer>
+      <p>
+        Recipes data from 
+        <a href="https://www.themealdb.com/" target="_blank" rel="noopener"
+          >TheMealDB</a
+        >.
+      </p>
+    </footer>
+  </body>
+</html>
