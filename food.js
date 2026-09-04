@@ -1,5 +1,20 @@
+/**
+ * Recipe search against two APIs.
+ *
+ * TheMealDB is the primary source: a public GET endpoint, no auth.
+ * When it returns no match and the user has opted in, the query is
+ * forwarded to Google Gemini, which generates a recipe instead.
+ *
+ * The two calls are deliberately different in shape (GET vs POST,
+ * flat vs deeply nested response) — see askGemini() for the contrast.
+ *
+ * Requires config.js to define GEMINI_API_KEY. See config.example.js.
+ */
+
+
 const API_URL = "https://www.themealdb.com/api/json/v1/1/search.php?s=";
 
+// TheMealDB always exposes 20 ingredient slots regardless of recipe size.
 const MAX_INGREDIENTS = 20;
 
 const GEMINI_MODEL = "gemini-3.5-flash";
@@ -22,6 +37,15 @@ if (!hasApiKey && aiToggle && aiNote) {
     "No API key found. Please add your API key in config.js.";
 }
 
+/**
+ * Flattens TheMealDB's 20 ingredient/measure field pairs into a list.
+ *
+ * Empty slots arrive inconsistently as "", " " or null, so each field
+ * is trimmed and falsy values are skipped.
+ *
+ * @param {object} meal - A meal object from TheMealDB
+ * @returns {string[]} Formatted lines, e.g. "200 g flour"
+ */
 function getIngredients(meal) {
   const list = [];
 
@@ -36,6 +60,19 @@ function getIngredients(meal) {
   return list;
 }
 
+
+/**
+ * Builds a recipe card element.
+ *
+ * Uses createElement/textContent rather than innerHTML: the content
+ * comes from an external API and must never be parsed as HTML (XSS).
+ *
+ * Returns the element rather than inserting it, so the caller controls
+ * placement — several cards are batched into a fragment before insert.
+ *
+ * @param {object} meal - A meal object from TheMealDB
+ * @returns {HTMLElement} An <article> ready to insert
+ */
 function createRecipeCard(meal) {
   const card = document.createElement("article");
   card.className = "recipe-card";
@@ -77,6 +114,16 @@ function createRecipeCard(meal) {
   return card;
 }
 
+/**
+ * Asks Gemini for a recipe and returns it as a structured object.
+ *
+ * Unlike the TheMealDB call this is a POST with a JSON body and a
+ * Content-Type header, and the payload is nested several levels deep.
+ *
+ * @param {string} query - The user's original search term
+ * @returns {Promise<object>} Parsed recipe: title, area, ingredients, instructions
+ * @throws {Error} With a user-facing message on HTTP or parsing failure
+ */
 async function askGemini(query) {
   statusEl.textContent = "Asking AI for a recipe...";
 
@@ -106,6 +153,9 @@ async function askGemini(query) {
     }),
   });
 
+  // fetch only rejects on network failure. HTTP error statuses are
+    // successful requests as far as it is concerned, so they must be
+    // checked explicitly or a 503 body gets parsed as a recipe.
   if (!response.ok) {
     const messages = {
       400: "Bad request — check the request body.",
@@ -120,6 +170,10 @@ async function askGemini(query) {
   }
   const data = await response.json();
 
+    // The reply is a string that itself contains JSON, so it needs a
+    // second parse on top of response.json(). Optional chaining guards
+    // the path: the model can return a candidate with no content when
+    // a response is blocked.
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!text) {
@@ -133,6 +187,19 @@ async function askGemini(query) {
   }
 }
 
+
+/**
+ * Builds a card for an AI-generated recipe.
+ *
+ * Mirrors createRecipeCard, with two differences: no image (Gemini
+ * returns none) and a badge marking the content as unverified.
+ *
+ * The element carries both classes — .recipe-card holds the shared
+ * styling, .ai-card only the differences.
+ *
+ * @param {{title: string, area: string, ingredients: string[], instructions: string}} recipe
+ * @returns {HTMLElement} An <article> ready to insert
+ */
 function createAiRecipeCard(recipe) {
   const card = document.createElement("article");
   card.className = "Recipe-card ai-card";
@@ -184,6 +251,9 @@ async function searchMeals(query) {
 
     const data = await response.json();
 
+    // TheMealDB returns null rather than [] when nothing matches, so
+    // this must be checked before touching .length. Zero results is
+    // also where the AI fallback hooks in, when the user opted in.
     if (data.meals === null) {
       if (aiToggle?.checked) {
         const recipe = await askGemini(query);
